@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Random Word Popup 1.1
+// @name         Random English Word Popup
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.3
 // @description  Display a random word with its definition, pronunciation, and examples
 // @match        *://*/*
 // @grant        GM_xmlhttpRequest
@@ -16,9 +16,8 @@
   let currentWordIndex = 0;
   let popupCreated = false;
   let changeWordTimeout;
-  const wordsToLoad = 50; // Загружаем по 50 слов за раз
+  const wordsToLoad = 50;
 
-  // Используем localStorage для хранения состояния свёрнутости
   let isPopupMinimized = localStorage.getItem('isPopupMinimized') === 'true' || false;
 
   function openTranslationWindow(word) {
@@ -29,7 +28,6 @@
 
   GM_addStyle(`
     .word-popup-button {
-      background-color: transparent;
       border: 1px solid #D3D3D3;
       color: white;
       padding: 8px 16px;
@@ -46,6 +44,10 @@
     .word-popup-button:hover {
       border-color: #A9A9A9;
       box-shadow: 0 12px 16px 0 rgba(0,0,0,0.24), 0 17px 50px 0 rgba(0,0,0,0.19);
+    }
+
+    .word-title {
+      font-size: 1.2em;
     }
   `);
 
@@ -81,20 +83,18 @@
   }
 
   function loadNextWord() {
-    // Проверяем, нужно ли загружать ещё слова
     if (wordsQueue.length >= wordsToLoad) return;
 
     for (let i = wordsQueue.length; i < wordsToLoad; i++) {
       GM_xmlhttpRequest({
         method: "GET",
         url: "https://random-word-api.herokuapp.com/word?number=1",
-        onload: async function(response) {
+        onload: async function (response) {
           const word = JSON.parse(response.responseText)[0];
           try {
             const wordData = await fetchWordData(word);
             wordsQueue.push(wordData);
 
-            // Если это первое слово в очереди, создаём попап и отображаем слово
             if (wordsQueue.length === 1) {
               createPopup();
               displayWord();
@@ -103,7 +103,7 @@
             console.error("Ошибка при получении данных слова:", error);
           }
         },
-        onerror: function(error) {
+        onerror: function (error) {
           console.error("Ошибка при получении случайного слова:", error);
         }
       });
@@ -118,6 +118,9 @@
     $('#phonetic').html(`<br><span style="font-size: smaller; color: lightgrey;">[${wordInfo.phoneticSpelling}]</span>`);
     $('#definition').text(wordInfo.definition);
     $('#examples').text(`Examples: ${wordInfo.examples}`);
+
+    adjustPopupHeight();
+    resetChangeWordTimer();
   }
 
   function resetChangeWordTimer() {
@@ -130,9 +133,10 @@
     popupCreated = true;
 
     const popupHTML = `
-      <div id="wordPopup" style="position: fixed; bottom: 20px; right: 20px; width: 450px; height: 170px; background: rgba(0, 0, 0, 0.5); color: white; padding: 10px; z-index: 9999; ${isPopupMinimized ? 'display: none;' : ''}">
+      <div id="wordPopup" style="position: fixed; bottom: 20px; right: 20px; width: 450px; background: rgba(0, 0, 0, 0.5); color: white; padding: 10px; z-index: 9999; ${isPopupMinimized ? 'display: none;' : ''}">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h2 style="margin: 0;"><span id="word" style="font-weight: bold; color: #fff; cursor: pointer;"></span><span id="phonetic" style="font-size: smaller; color: lightgrey;"></span></h2>
+          <div style="margin: 0;"> <span class="word-title"> <span id="word" style="font-weight: bold; color: #fff; cursor: pointer;"></span><span id="phonetic" style="font-size: smaller; color: lightgrey;"></span> </span>
+          </div>
           <div>
             <button id="prevWord" class="word-popup-button" style="font-size: 16px;">←</button>
             <button id="togglePopup" class="word-popup-button" style="font-size: 16px;">−</button>
@@ -148,21 +152,29 @@
     `;
     $('body').append(popupHTML);
 
-    // При загрузке страницы проверяем состояние свёрнутости
+    const buttons = $('#wordPopup .word-popup-button');
+    buttons.each(function () {
+      $(this).css({
+        'background-color': 'transparent'
+      });
+    });
+
     applyPopupState();
     $(window).on('load hashchange', applyPopupState);
 
-    $('#togglePopup').one('click', function() {
+    $('#togglePopup').one('click', function () {
       togglePopupState();
     });
 
-    $('#minimizedPopup').one('click', function() {
+    $('#minimizedPopup').one('click', function () {
       togglePopupState();
     });
 
     $('#prevWord').on('click', showPreviousWord);
     $('#nextWord').on('click', showNextWord);
     $('#word').on('click', () => openTranslationWindow($('#word').text()));
+
+    resetChangeWordTimer();
   }
 
   function showPreviousWord() {
@@ -178,11 +190,10 @@
       currentWordIndex = (currentWordIndex + 1) % wordsQueue.length;
       displayWord();
       resetChangeWordTimer();
-      loadNextWord(); // Запускаем подгрузку новых слов
+      loadNextWord();
     }
   }
 
-  // Функция для переключения состояния свёрнутости и сохранения в localStorage
   function togglePopupState() {
     $('#wordPopup').toggle();
     $('#minimizedPopup').toggle();
@@ -190,7 +201,6 @@
     localStorage.setItem('isPopupMinimized', isPopupMinimized);
   }
 
-  // Функция для установки состояния попапа
   function applyPopupState() {
     if (isPopupMinimized) {
       $('#wordPopup').hide();
@@ -201,7 +211,14 @@
     }
   }
 
-  $(document).on('keydown', function(event) {
+  function adjustPopupHeight() {
+    const popup = $('#wordPopup');
+    popup.css('height', 'auto');
+    const contentHeight = popup.outerHeight();
+    popup.css('height', contentHeight + 'px');
+  }
+
+  $(document).on('keydown', function (event) {
     if (event.key === 'ArrowLeft') {
       showPreviousWord();
     } else if (event.key === 'ArrowRight') {
@@ -209,7 +226,7 @@
     }
   });
 
-  $(document).ready(function() {
-    loadNextWord(); // Загрузка первой порции слов
+  $(document).ready(function () {
+    loadNextWord();
   });
 })();
